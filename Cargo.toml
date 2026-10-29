@@ -1,0 +1,18 @@
+[package]
+name = "bddkit-script"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+description = "A `bddkit` plugin that runs short Rhai scripts to derive values (Base64, HMAC, JWT) inside feature files"
+license = "Apache-2.0"
+repository = "https://github.com/bddkit/bddkit-script"
+homepage = "https://github.com/bddkit/bddkit-script"
+readme = "README.md"
+keywords = ["bdd", "gherkin", "testing", "scripting", "bddkit"]
+categories = ["development-tools::testing"]
+exclude = ["/.github", "/.idea", "/docs"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
