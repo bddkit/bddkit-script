@@ -1,0 +1,7 @@
+[workspace]
+# This project distributes native plugin libraries through GitHub Releases.
+# Tags, rather than crates.io, are therefore the version registry.
+git_only = true
+publish = false
+semver_check = false
+changelog_update = true

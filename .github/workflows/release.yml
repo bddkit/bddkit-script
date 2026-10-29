@@ -1,0 +1,178 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      rebuild_tag:
+        description: Existing tag to rebuild (for example, v0.1.0). Leave empty for a normal release.
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: publish, tag, and release
+    if: ${{ inputs.rebuild_tag == '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    outputs:
+      created: ${{ steps.release-plz.outputs.releases_created }}
+      tag: ${{ steps.release-plz.outputs.releases_created == 'true' && fromJSON(steps.release-plz.outputs.releases)[0].tag || '' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: "1.97.1"
+          rustflags: ""
+
+      - name: Run release-plz
+        id: release-plz
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+
+  release-pr:
+    name: release PR
+    if: ${{ inputs.rebuild_tag == '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: "1.97.1"
+          rustflags: ""
+
+      - name: Run release-plz
+        uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+
+  library:
+    name: ${{ matrix.target }}
+    needs: release
+    if: ${{ always() && (inputs.rebuild_tag != '' || needs.release.outputs.created == 'true') }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ubuntu-22.04 keeps the glibc baseline low enough for older distros.
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          # Both Apple slices build on Apple Silicon; the macOS SDK supports it.
+          - target: x86_64-apple-darwin
+            os: macos-15
+          - target: aarch64-apple-darwin
+            os: macos-15
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+
+    env:
+      TAG: ${{ inputs.rebuild_tag != '' && inputs.rebuild_tag || needs.release.outputs.tag }}
+      TARGET: ${{ matrix.target }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: "1.97.1"
+          target: ${{ matrix.target }}
+          cache-key: ${{ matrix.target }}
+          rustflags: ""
+
+      - name: Build the plugin library
+        run: cargo build --locked --release --target ${{ matrix.target }}
+
+      - name: Package Unix library
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="bddkit-script-${TAG}-${TARGET}"
+          case "$RUNNER_OS" in
+            Linux) library="libbddkit_script.so" ;;
+            macOS) library="libbddkit_script.dylib" ;;
+            *) echo "unsupported Unix runner: $RUNNER_OS" >&2; exit 1 ;;
+          esac
+          mkdir -p "dist/$name"
+          cp "target/$TARGET/release/$library" "dist/$name/"
+          cp README.md LICENSE "dist/$name/"
+          tar -C dist -czf "$name.tar.gz" "$name"
+          if command -v sha256sum >/dev/null; then
+            sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+          else
+            shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
+          fi
+          echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Package Windows library
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $name = "bddkit-script-$env:TAG-$env:TARGET"
+          New-Item -ItemType Directory -Path "dist/$name" -Force | Out-Null
+          Copy-Item "target/$env:TARGET/release/bddkit_script.dll" "dist/$name/"
+          Copy-Item README.md, LICENSE "dist/$name/"
+          Compress-Archive -Path "dist/$name" -DestinationPath "$name.zip"
+          $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
+          "ASSET=$name.zip" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Upload release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber
+
+  abi-manifest:
+    name: bddkit-plugin.json
+    needs: release
+    if: ${{ always() && (inputs.rebuild_tag != '' || needs.release.outputs.created == 'true') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.rebuild_tag != '' && inputs.rebuild_tag || needs.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TAG }}
+
+      # Once per release, not from the per-target jobs, so they cannot race.
+      - name: Upload bddkit-plugin.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" bddkit-plugin.json --clobber
