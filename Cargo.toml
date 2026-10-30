@@ -3,7 +3,7 @@ name = "bddkit-script"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.97"
-description = "A `bddkit` plugin that runs short Rhai scripts to derive values (Base64, HMAC, JWT) inside feature files"
+description = "Rhai script steps for the bddkit acceptance-testing tool: derive values (Base64, HMAC, JWT) from the file's variables"
 license = "Apache-2.0"
 repository = "https://github.com/bddkit/bddkit-script"
 homepage = "https://github.com/bddkit/bddkit-script"
@@ -13,6 +13,14 @@ categories = ["development-tools::testing"]
 exclude = ["/.github", "/.idea", "/docs"]
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+base64 = "0.22"
+hmac = "0.12"
+sha2 = "0.10"
+rhai = { version = "1.27", features = ["no_time", "no_module", "internals", "metadata"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+regex = "1"
