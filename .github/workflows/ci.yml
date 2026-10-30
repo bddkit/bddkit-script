@@ -27,3 +27,24 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --locked
+
+  # Drives the plugin through a published host. 0.4.0 is the first release
+  # that speaks plugin ABI 3; without BDDKIT_BIN these tests skip themselves.
+  e2e:
+    name: e2e against bddkit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: "1.97.1"
+          rustflags: ""
+
+      - name: Install bddkit
+        run: cargo install bddkit --version 0.4.0 --locked --root "$RUNNER_TEMP/bddkit"
+
+      - name: End-to-end tests
+        env:
+          BDDKIT_BIN: ${{ runner.temp }}/bddkit/bin/bddkit
+        run: cargo test --locked --test e2e
