@@ -1,6 +1,6 @@
 [package]
 name = "bddkit-script"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.97"
 description = "Rhai script steps for the bddkit acceptance-testing tool: derive values (Base64, HMAC, JWT) from the file's variables"
