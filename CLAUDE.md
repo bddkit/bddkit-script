@@ -19,7 +19,7 @@ The authoring contract is `docs/plugin-authoring.md` in the `bddkit/bddkit` repo
 
 ## Layout
 
-`src/lib.rs` the exports, guard and `bddkit_validate_step` · `src/script/engine.rs` the sandboxed Rhai engine · `functions.rs` host functions (`base64`, `hmac_sha256`, `secret`, …) · `scope.rs` `vars`, the script's read-only view of the file's variables · `export.rs` what a script hands back as variables · `steps.rs` step declarations · `tests/e2e.rs`, `tests/exports.rs` · `examples/`.
+`src/lib.rs` the exports, guard and `bddkit_validate_step` · `src/script/engine.rs` the sandboxed Rhai engine: `run` executes, `check` reports what is known without running · `functions.rs` host functions (`base64`, `hmac_sha256`, `secret`, …) · `scope.rs` `vars`, the script's read-only view of the file's variables · `export.rs` what a script hands back as variables · `steps.rs` step declarations · `tests/e2e.rs`, `tests/exports.rs` · `examples/`.
 
 ## Dev workflow
 
