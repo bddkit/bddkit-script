@@ -62,23 +62,22 @@ fn refuse(message: String, summary: &str) -> Refusal {
 /// map and its top-level keys are the names.
 pub fn flatten(target: Option<&str>, value: Dynamic) -> Result<Vec<(String, String)>, Refusal> {
     let mut out = Vec::new();
-    match target {
-        Some(name) => walk(name, name, &value, 0, &mut out)?,
-        None => {
-            if !value.is_map() {
-                let message = format!("expected a map, got {}", value.type_name());
-                return Err(refuse(message.clone(), &message));
-            }
-            let map: Map = value.cast();
-            for (key, item) in &map {
-                check_name(key).map_err(|message| {
-                    refuse(
-                        message,
-                        "a key of the map is not a variable name <<…>> can read back",
-                    )
-                })?;
-                walk(key, key, item, 0, &mut out)?;
-            }
+    if let Some(name) = target {
+        walk(name, name, &value, 0, &mut out)?;
+    } else {
+        if !value.is_map() {
+            let message = format!("expected a map, got {}", value.type_name());
+            return Err(refuse(message.clone(), &message));
+        }
+        let map: Map = value.cast();
+        for (key, item) in &map {
+            check_name(key).map_err(|message| {
+                refuse(
+                    message,
+                    "a key of the map is not a variable name <<…>> can read back",
+                )
+            })?;
+            walk(key, key, item, 0, &mut out)?;
         }
     }
     let mut seen: HashMap<&str, &str> = HashMap::new();
@@ -275,7 +274,7 @@ mod tests {
 
     #[test]
     fn two_paths_to_one_name_collide() {
-        let err = flatten(Some("a"), eval(r#"#{ roles: [1], roles_length: 7 }"#))
+        let err = flatten(Some("a"), eval(r"#{ roles: [1], roles_length: 7 }"))
             .unwrap_err()
             .message;
         assert!(err.contains("a_roles_length"), "{err}");
@@ -332,14 +331,16 @@ mod tests {
 
     #[test]
     fn an_array_length_counts_towards_the_limit() {
-        let full = Dynamic::from_array((0..MAX_VARIABLES as i64).map(Dynamic::from).collect());
+        let max = i64::try_from(MAX_VARIABLES).unwrap();
+        let full = Dynamic::from_array((0..max).map(Dynamic::from).collect());
         let err = flatten(Some("big"), full).unwrap_err().message;
         assert!(err.contains("10000"), "{err}");
     }
 
     #[test]
     fn too_many_variables_are_refused() {
-        let big = Dynamic::from_array((0..=MAX_VARIABLES as i64).map(Dynamic::from).collect());
+        let max = i64::try_from(MAX_VARIABLES).unwrap();
+        let big = Dynamic::from_array((0..=max).map(Dynamic::from).collect());
         let err = flatten(Some("big"), big).unwrap_err().message;
         assert!(err.contains("10000") || err.contains("10 000"), "{err}");
     }

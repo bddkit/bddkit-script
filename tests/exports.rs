@@ -1,5 +1,12 @@
 //! The FFI surface, called in-process through the rlib.
 
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "`allow-*-in-tests` covers only `#[test]` functions, not the helpers here"
+)]
+
 use std::ffi::{CStr, CString, c_char};
 
 use bddkit_script::*;
@@ -19,7 +26,7 @@ fn take(p: *mut c_char) -> Value {
     serde_json::from_str(&text).expect("JSON reply")
 }
 
-fn call(f: extern "C" fn(*const c_char) -> *mut c_char, request: Value) -> Value {
+fn call(f: extern "C" fn(*const c_char) -> *mut c_char, request: &Value) -> Value {
     let c = CString::new(request.to_string()).expect("no NUL");
     take(f(c.as_ptr()))
 }
@@ -68,7 +75,7 @@ fn the_two_steps_are_listed_and_match_their_text() {
 
 #[test]
 fn dispatch_runs_a_script_through_the_export() {
-    let made = call(bddkit_init_instance, json!({"config": {}}));
+    let made = call(bddkit_init_instance, &json!({"config": {}}));
     let handle = made["handle"].as_u64().expect("handle");
     let req = json!({
         "args": ["joined"], "docstring": "\nlet a = 4;\n`${a}|5`\n", "table": null,
@@ -102,17 +109,17 @@ fn validate_step_answers_ok_or_an_error() {
 #[test]
 fn validate_config_accepts_an_object_and_refuses_anything_else() {
     assert_eq!(
-        call(bddkit_validate_config, json!({"config": {}})),
+        call(bddkit_validate_config, &json!({"config": {}})),
         json!({"ok": true})
     );
-    let bad = call(bddkit_validate_config, json!({"config": [1]}));
+    let bad = call(bddkit_validate_config, &json!({"config": [1]}));
     assert_eq!(bad["ok"], false);
     assert!(bad["error"].as_str().is_some_and(|e| !e.is_empty()));
 }
 
 #[test]
 fn an_instance_is_created_dispatched_to_and_dropped_once() {
-    let made = call(bddkit_init_instance, json!({"config": {}}));
+    let made = call(bddkit_init_instance, &json!({"config": {}}));
     assert_eq!(made["ok"], true);
     let handle = made["handle"].as_u64().expect("handle");
 

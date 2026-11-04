@@ -9,17 +9,26 @@ use std::collections::HashSet;
 use std::ffi::{CStr, CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex, MutexGuard};
 
 /// Outside `guard`, and safe there only because it provably cannot panic:
-/// `CString::new` returns a `Result` and the fallback literal has no interior
-/// NUL. Anything added here must keep that property.
+/// `CString::new` returns a `Result` and the fallback is a `c""` literal, whose
+/// lack of an interior NUL the compiler checks. Anything added here must keep
+/// that property.
 fn out(s: String) -> *mut c_char {
     CString::new(s)
-        .unwrap_or_else(|_| {
-            CString::new("{\"ok\":false,\"error\":\"NUL in reply\"}").expect("literal")
-        })
+        .unwrap_or_else(|_| c"{\"ok\":false,\"error\":\"NUL in reply\"}".to_owned())
         .into_raw()
+}
+
+/// Never recovers from poison with `PoisonError::into_inner`: a set left half
+/// updated could lose a secret, which would then be shown unmasked.
+#[expect(
+    clippy::expect_used,
+    reason = "a mutex is poisoned only if a holder panicked, and that panic must stay one: `guard` or the script thread's join turns it into a reply"
+)]
+fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().expect("a holder panicked")
 }
 
 /// Inside `guard` at every call site.
@@ -32,6 +41,7 @@ fn input(p: *const c_char) -> String {
 }
 
 /// The shape of the reply a panic is turned into.
+#[derive(Clone, Copy)]
 enum Reply {
     Dispatch,
     Envelope,
@@ -112,7 +122,7 @@ pub extern "C" fn bddkit_init_instance(request: *const c_char) -> *mut c_char {
             return err(&e.to_string());
         }
         let handle = NEXT_HANDLE.fetch_add(1, Ordering::SeqCst);
-        INSTANCES.lock().expect("instances").insert(handle);
+        locked(&INSTANCES).insert(handle);
         serde_json::json!({"ok": true, "handle": handle}).to_string()
     })
 }
@@ -128,7 +138,7 @@ pub extern "C" fn bddkit_dispatch(
             Ok(v) => v,
             Err(e) => return fatal(&e.to_string(), &[]),
         };
-        if !INSTANCES.lock().expect("instances").contains(&handle) {
+        if !locked(&INSTANCES).contains(&handle) {
             return fatal("unknown handle", &[]);
         }
         script::steps::route(step_index, &request)
@@ -149,7 +159,7 @@ pub extern "C" fn bddkit_validate_step(step_index: u32, request: *const c_char) 
 #[unsafe(no_mangle)]
 pub extern "C" fn bddkit_drop_instance(handle: u64) -> *mut c_char {
     guard(Reply::Envelope, move || {
-        if INSTANCES.lock().expect("instances").remove(&handle) {
+        if locked(&INSTANCES).remove(&handle) {
             ok()
         } else {
             err("unknown handle")

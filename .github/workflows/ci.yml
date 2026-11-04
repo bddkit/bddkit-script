@@ -25,6 +25,18 @@ jobs:
           components: clippy, rustfmt
           rustflags: ""
       - run: cargo fmt --check
+      - name: File size budget
+        run: |
+          files=$(git ls-files '*.rs' '*.feature' '*.yaml' '*.yml' ':!.github/')
+          status=0
+          while IFS= read -r file; do
+            lines=$(wc -l < "$file")
+            if [ "$lines" -gt 1000 ]; then
+              echo "::error file=$file::$lines lines, the limit is 1000"
+              status=1
+            fi
+          done <<< "$files"
+          exit "$status"
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --locked
 

@@ -105,7 +105,7 @@ mod tests {
 
     const JWT: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJBbm4ifQ.92qA8pVES5gosRQTGwzUCHOEfgNXozGuNWWdpnLAL4Y";
 
-    fn req(args: &[&str], script: &str, vars: Value) -> Value {
+    fn req(args: &[&str], script: &str, vars: &Value) -> Value {
         json!({"args": args, "docstring": format!("\n{script}\n"), "table": null, "vars": vars})
     }
 
@@ -120,7 +120,7 @@ mod tests {
 
     #[test]
     fn step_zero_saves_the_result_under_the_name() {
-        let r = reply(0, &req(&["joined"], "let a = 4;\n`${a}|5`", json!({})));
+        let r = reply(0, &req(&["joined"], "let a = 4;\n`${a}|5`", &json!({})));
         assert_eq!(r["status"], "passed");
         assert_eq!(r["vars"], json!({"joined": "4|5"}));
         assert_eq!(r["secrets"], json!([]));
@@ -128,17 +128,21 @@ mod tests {
 
     #[test]
     fn an_array_and_a_map_are_flattened() {
-        let r = reply(0, &req(&["ids"], "[7, 8]", json!({})));
+        let r = reply(0, &req(&["ids"], "[7, 8]", &json!({})));
         assert_eq!(
             r["vars"],
             json!({"ids_0": "7", "ids_1": "8", "ids_length": "2"})
         );
         let r = reply(
             1,
-            &req(&[], r#"#{ token: "t", user: #{ name: "Ann" } }"#, json!({})),
+            &req(
+                &[],
+                r#"#{ token: "t", user: #{ name: "Ann" } }"#,
+                &json!({}),
+            ),
         );
         assert_eq!(r["vars"], json!({"token": "t", "user_name": "Ann"}));
-        let r = reply(1, &req(&[], "5", json!({})));
+        let r = reply(1, &req(&[], "5", &json!({})));
         assert_eq!(r["status"], "fatal");
         assert!(r["error"].as_str().unwrap().contains("expected a map"));
     }
@@ -154,7 +158,7 @@ let s = base64url(hmac_sha256(vars.jwtSecret, `${h}.${p}`));
             "user": {"value": "Ann", "secret": false},
             "jwtSecret": {"value": "s3cret", "secret": true},
         });
-        let r = reply(0, &req(&["token"], script, vars));
+        let r = reply(0, &req(&["token"], script, &vars));
         assert_eq!(r["status"], "passed", "{r}");
         assert_eq!(r["vars"]["token"], JWT);
         // Reading a secret makes the exported token a secret too.
@@ -164,7 +168,7 @@ let s = base64url(hmac_sha256(vars.jwtSecret, `${h}.${p}`));
     #[test]
     fn reading_only_plain_variables_exports_no_secrets() {
         let vars = json!({"user": {"value": "Ann", "secret": false}});
-        let r = reply(0, &req(&["x"], "vars.user", vars));
+        let r = reply(0, &req(&["x"], "vars.user", &vars));
         assert_eq!(r["status"], "passed", "{r}");
         assert_eq!(r["secrets"], json!([]));
     }
@@ -172,7 +176,7 @@ let s = base64url(hmac_sha256(vars.jwtSecret, `${h}.${p}`));
     #[test]
     fn an_hmac_registers_its_key() {
         let script = r#"hex(hmac_sha256("topsecretkey", "payload"))"#;
-        let r = reply(0, &req(&["m"], script, json!({})));
+        let r = reply(0, &req(&["m"], script, &json!({})));
         assert_eq!(r["status"], "passed", "{r}");
         let secrets = r["secrets"].as_array().unwrap();
         assert!(secrets.contains(&json!("topsecretkey")));
@@ -181,7 +185,7 @@ let s = base64url(hmac_sha256(vars.jwtSecret, `${h}.${p}`));
     #[test]
     fn a_failure_names_the_line_and_never_quotes_a_secret_variable() {
         let vars = json!({"pw": {"value": "hunter2hunter2", "secret": true}});
-        let r = reply(0, &req(&["x"], "let a = 1;\nbase64_decode(vars.pw)", vars));
+        let r = reply(0, &req(&["x"], "let a = 1;\nbase64_decode(vars.pw)", &vars));
         assert_eq!(r["status"], "fatal");
         let e = r["error"].as_str().unwrap();
         assert!(
@@ -196,7 +200,7 @@ let s = base64url(hmac_sha256(vars.jwtSecret, `${h}.${p}`));
     #[test]
     fn a_bad_name_or_a_missing_script_is_fatal() {
         for name in ["1st", "null"] {
-            let r = reply(0, &req(&[name], "1", json!({})));
+            let r = reply(0, &req(&[name], "1", &json!({})));
             assert_eq!(r["status"], "fatal", "{name}");
         }
         for doc in [json!(null), json!("\n  \n")] {

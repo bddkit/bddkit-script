@@ -25,6 +25,7 @@ The authoring contract is `docs/plugin-authoring.md` in the `bddkit/bddkit` repo
 
 - Edition 2024, `rust-version` 1.97 (CI pins the toolchain). Dependency versions are not bumped without being asked.
 - `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` must be clean.
+- Code health limits, enforced in CI: a function has at most 100 lines as Clippy counts them (no blank lines or comments), blocks nest at most 5 levels (Clippy also counts `mod`, `impl` and `fn`), and a Rust, `.feature` or YAML file (workflows aside) has at most 1,000 lines. The policy is `[lints.clippy]` in `Cargo.toml` and `clippy.toml`; the reasoning is bddkit/bddkit#200. An exception is `#[expect(..., reason = "...")]`, with a link to a tracking issue when it is a function over the limit. Helpers in `tests/*.rs` are the one standing exception: those files allow `expect_used`, `unwrap_used` and `panic` at the top.
 - `cargo test --locked` runs everything; `cargo test --locked --test e2e` is the end-to-end suite against a `bddkit` binary.
 - Everything in the repository is English: code, comments, error messages, documentation. Conversational replies follow the operator's language.
 - Markdown: never soft-wrap prose; one paragraph or list item is one physical line.
