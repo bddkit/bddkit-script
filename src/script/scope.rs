@@ -85,8 +85,8 @@ mod tests {
     use rhai::{Engine, Scope};
     use serde_json::json;
 
-    fn setup(request: serde_json::Value) -> (Engine, Scope<'static>, Vars) {
-        let vars = Vars::from_request(&request).unwrap();
+    fn setup(request: &serde_json::Value) -> (Engine, Scope<'static>, Vars) {
+        let vars = Vars::from_request(request).unwrap();
         let mut engine = Engine::new();
         register(&mut engine);
         let mut scope = Scope::new();
@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn a_name_reads_through_property_and_indexer() {
-        let (engine, mut scope, _) = setup(json!({"user_id": {"value": "7", "secret": false}}));
+        let (engine, mut scope, _) = setup(&json!({"user_id": {"value": "7", "secret": false}}));
         assert_eq!(
             engine
                 .eval_with_scope::<String>(&mut scope, "vars.user_id")
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn an_unknown_name_names_itself_in_the_error() {
-        let (engine, mut scope, _) = setup(json!({}));
+        let (engine, mut scope, _) = setup(&json!({}));
         let err = engine
             .eval_with_scope::<String>(&mut scope, "vars.nope")
             .unwrap_err();
@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     fn contains_does_not_count_as_a_read() {
-        let (engine, mut scope, vars) = setup(json!({"k": {"value": "hunter22", "secret": true}}));
+        let (engine, mut scope, vars) = setup(&json!({"k": {"value": "hunter22", "secret": true}}));
         assert!(
             engine
                 .eval_with_scope::<bool>(&mut scope, r#"vars.contains("k")"#)
@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn only_reading_a_secret_entry_is_remembered() {
-        let (engine, mut scope, vars) = setup(json!({
+        let (engine, mut scope, vars) = setup(&json!({
             "k": {"value": "hunter22", "secret": true},
             "greeting": {"value": "hi", "secret": false},
         }));
@@ -149,13 +149,13 @@ mod tests {
 
     #[test]
     fn a_null_value_reads_as_unit() {
-        let (engine, mut scope, _) = setup(json!({"n": {"value": null, "secret": false}}));
+        let (engine, mut scope, _) = setup(&json!({"n": {"value": null, "secret": false}}));
         assert!(engine.eval_with_scope::<()>(&mut scope, "vars.n").is_ok());
     }
 
     #[test]
     fn secret_values_lists_every_secret_entry_and_nothing_else() {
-        let (_, _, vars) = setup(json!({
+        let (_, _, vars) = setup(&json!({
             "a": {"value": "one", "secret": true},
             "b": {"value": "two", "secret": false},
             "c": {"value": null, "secret": true},

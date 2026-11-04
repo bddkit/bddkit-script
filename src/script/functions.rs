@@ -1,12 +1,14 @@
 //! The host functions a script can call. A fixed set: what a tester needs to
 //! derive a credential without a plugin.
 
+use crate::locked;
 use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac};
 use rhai::{Blob, Dynamic, Engine, EvalAltResult, ImmutableString, Position};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
+use std::fmt::Write as _;
 use std::sync::{Arc, Mutex};
 
 /// Everything the script has declared secret, shared by clones. The plugin
@@ -41,7 +43,7 @@ impl Secrets {
     /// Fails, quoting no value, when the set would pass `MAX_SECRETS` or
     /// `MAX_SECRET_BYTES`: a secret left out would be shown unmasked.
     pub fn add(&self, value: &str) -> Result<(), String> {
-        let mut set = self.values.lock().expect("secrets");
+        let mut set = locked(&self.values);
         if value.is_empty() || set.seen.contains(value) {
             return Ok(());
         }
@@ -57,17 +59,16 @@ impl Secrets {
     }
 
     pub fn len(&self) -> usize {
-        self.values.lock().expect("secrets").order.len()
+        locked(&self.values).order.len()
     }
 
     pub fn list(&self) -> Vec<String> {
-        self.values.lock().expect("secrets").order.clone()
+        locked(&self.values).order.clone()
     }
 
     /// The value-free form of `message`, if a host function raised it.
     pub fn operation_of(&self, message: &str) -> Option<String> {
-        let failure = self.failure.lock().expect("failure");
-        failure
+        locked(&self.failure)
             .as_ref()
             .filter(|(full, _)| full == message)
             .map(|(_, short)| short.clone())
@@ -98,16 +99,24 @@ pub fn quote(secrets: &Secrets, value: &str) -> String {
     }
 }
 
+#[expect(
+    clippy::unnecessary_box_returns,
+    reason = "Rhai's registered functions fail with `Box<EvalAltResult>`, which every caller returns"
+)]
 fn fail(secrets: &Secrets, op: &str, value: &str, why: &str) -> Fail {
     let short = format!("{op}: {why}");
     let message = format!("{short}: {:?}", quote(secrets, value));
-    *secrets.failure.lock().expect("failure") = Some((message.clone(), short));
+    *locked(&secrets.failure) = Some((message.clone(), short));
     EvalAltResult::ErrorRuntime(message.into(), Position::NONE).into()
 }
 
 /// A failure whose text quotes no value, so it is shown as it is.
+#[expect(
+    clippy::unnecessary_box_returns,
+    reason = "Rhai's registered functions fail with `Box<EvalAltResult>`, which every caller returns"
+)]
 fn fail_plain(secrets: &Secrets, message: String) -> Fail {
-    *secrets.failure.lock().expect("failure") = Some((message.clone(), message.clone()));
+    *locked(&secrets.failure) = Some((message.clone(), message.clone()));
     EvalAltResult::ErrorRuntime(message.into(), Position::NONE).into()
 }
 
@@ -157,10 +166,20 @@ fn secret_forms(secrets: &Secrets, mac: &[u8]) -> Result<(), Fail> {
 }
 
 fn hex(data: &[u8]) -> String {
-    data.iter().map(|b| format!("{b:02x}")).collect()
+    let mut out = String::with_capacity(data.len() * 2);
+    for b in data {
+        // Writing to a `String` cannot fail.
+        let _ = write!(out, "{b:02x}");
+    }
+    out
 }
 
 pub fn register(engine: &mut Engine, secrets: &Secrets) {
+    register_codecs(engine, secrets);
+    register_crypto(engine, secrets);
+}
+
+fn register_codecs(engine: &mut Engine, secrets: &Secrets) {
     let r = secrets.clone();
     engine.register_fn("base64", move |x: Dynamic| -> Result<String, Fail> {
         Ok(STANDARD.encode(bytes(&r, "base64", &x)?))
@@ -233,6 +252,13 @@ pub fn register(engine: &mut Engine, secrets: &Secrets) {
     });
 
     let r = secrets.clone();
+    engine.register_fn("hex", move |x: Dynamic| -> Result<String, Fail> {
+        Ok(hex(&bytes(&r, "hex", &x)?))
+    });
+}
+
+fn register_crypto(engine: &mut Engine, secrets: &Secrets) {
+    let r = secrets.clone();
     engine.register_fn("sha256", move |x: Dynamic| -> Result<Blob, Fail> {
         Ok(Sha256::digest(bytes(&r, "sha256", &x)?).to_vec())
     });
@@ -248,8 +274,8 @@ pub fn register(engine: &mut Engine, secrets: &Secrets) {
             }
             secret_forms(&r, &key_bytes)?;
             // hmac 0.12 always answers Ok: a key of any length is hashed or padded.
-            let mut mac =
-                Hmac::<Sha256>::new_from_slice(&key_bytes).expect("HMAC takes a key of any length");
+            let mut mac = Hmac::<Sha256>::new_from_slice(&key_bytes)
+                .map_err(|e| fail_plain(&r, format!("hmac_sha256: {e}")))?;
             mac.update(&msg_bytes);
             let out = mac.finalize().into_bytes().to_vec();
             secret_forms(&r, &out)?;
@@ -257,10 +283,6 @@ pub fn register(engine: &mut Engine, secrets: &Secrets) {
         },
     );
 
-    let r = secrets.clone();
-    engine.register_fn("hex", move |x: Dynamic| -> Result<String, Fail> {
-        Ok(hex(&bytes(&r, "hex", &x)?))
-    });
     let r = secrets.clone();
     engine.register_fn("secret", move |x: Dynamic| -> Result<Dynamic, Fail> {
         if x.is_string() || x.is_int() || x.is_float() || x.is_bool() || x.is_char() {
@@ -392,14 +414,12 @@ mod tests {
         let redactor = Secrets::default();
         let engine = engine(&redactor);
         let got = engine
-            .eval::<String>(
-                r#"`${secret(4242) + 1} ${secret(1.5)} ${secret(true)} ${secret('c')}`"#,
-            )
+            .eval::<String>(r"`${secret(4242) + 1} ${secret(1.5)} ${secret(true)} ${secret('c')}`")
             .unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(got, "4243 1.5 true c");
         assert_eq!(redactor.list(), ["4242", "1.5", "true", "c"]);
         let err = engine
-            .eval::<Dynamic>(r#"secret([1234567])"#)
+            .eval::<Dynamic>(r"secret([1234567])")
             .unwrap_err()
             .to_string();
         assert!(err.contains("secret") && err.contains("array"), "{err}");

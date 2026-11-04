@@ -4,6 +4,7 @@
 use super::export;
 use super::functions::{self, Secrets};
 use super::scope::{self, Vars};
+use crate::locked;
 use rhai::{ASTNode, Dynamic, Engine, EvalAltResult, Expr, Position, Scope, Stmt};
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -149,8 +150,8 @@ fn on_script_stack<T: Send>(body: impl FnOnce() -> T + Send) -> Result<T, String
 fn on_stack<T: Send>(sizes: &[usize], body: impl FnOnce() -> T + Send) -> Result<T, String> {
     let slot = Mutex::new(Some(body));
     let run = || {
-        let body = slot.lock().expect("body").take();
-        body.expect("only a started thread takes the body")()
+        let body = locked(&slot).take();
+        body.map(|body| body())
     };
     std::thread::scope(|scope| {
         let mut refused = None;
@@ -160,7 +161,13 @@ fn on_stack<T: Send>(sizes: &[usize], body: impl FnOnce() -> T + Send) -> Result
                 .stack_size(size)
                 .spawn_scoped(scope, run)
             {
-                Ok(thread) => return thread.join().map_err(|_| "the script panicked".to_string()),
+                Ok(thread) => {
+                    return thread
+                        .join()
+                        .ok()
+                        .flatten()
+                        .ok_or_else(|| "the script panicked".to_string());
+                }
                 Err(e) => refused = Some(e),
             }
         }
@@ -208,7 +215,8 @@ fn run_here(
     // from it, which no mask can know; so the error quotes no value at all,
     // and is not masked either, which would garble it around a short secret.
     let preloaded = secrets.len();
-    let used_secret = || vars.read_secret() || secrets.len() > preloaded;
+    let seen = vars.clone();
+    let used_secret = || seen.read_secret() || secrets.len() > preloaded;
     let hidden = |message: String| RunError {
         message,
         secrets: secrets.list(),
@@ -217,20 +225,26 @@ fn run_here(
     let mut engine = engine(secrets);
     engine.set_strict_variables(true);
     let mut scope = Scope::new();
-    scope.push_constant("vars", vars.clone());
+    scope.push_constant("vars", vars);
     let value = engine
         .eval_with_scope::<Dynamic>(&mut scope, script)
-        .map_err(|e| match used_secret() {
-            true => hidden(format!(
-                "{}{}",
-                line(e.position()),
-                what_failed(&e, secrets, script)
-            )),
-            false => fail(describe(&e)),
+        .map_err(|e| {
+            if used_secret() {
+                hidden(format!(
+                    "{}{}",
+                    line(e.position()),
+                    what_failed(&e, secrets, script)
+                ))
+            } else {
+                fail(describe(&e))
+            }
         })?;
-    let pairs = export::flatten(target, value).map_err(|r| match used_secret() {
-        true => hidden(r.summary),
-        false => fail(r.message),
+    let pairs = export::flatten(target, value).map_err(|r| {
+        if used_secret() {
+            hidden(r.summary)
+        } else {
+            fail(r.message)
+        }
     })?;
     if used_secret() {
         for (_, value) in &pairs {
@@ -307,10 +321,7 @@ fn check_here(script: &str) -> Result<(), String> {
     let mut engine = engine(&Secrets::default());
     engine.set_strict_variables(true);
     let mut scope = Scope::new();
-    scope.push_constant(
-        "vars",
-        Vars::from_request(&serde_json::json!({})).expect("an empty object is valid"),
-    );
+    scope.push_constant("vars", Vars::from_request(&serde_json::json!({}))?);
     let ast = engine
         .compile_with_scope(&scope, script)
         .map_err(|e| format!("{}{}", line(e.position()), e.err_type()))?;
@@ -331,8 +342,10 @@ fn check_here(script: &str) -> Result<(), String> {
     ast.walk(&mut |nodes| {
         // A call standing alone as a statement is `Stmt::FnCall`, not an `Expr`.
         let (call, position, receiver) = match nodes.last() {
-            Some(ASTNode::Expr(Expr::FnCall(call, position)))
-            | Some(ASTNode::Stmt(Stmt::FnCall(call, position))) => (call, position, 0),
+            Some(
+                ASTNode::Expr(Expr::FnCall(call, position))
+                | ASTNode::Stmt(Stmt::FnCall(call, position)),
+            ) => (call, position, 0),
             Some(ASTNode::Expr(Expr::MethodCall(call, position))) => (call, position, 1),
             _ => return true,
         };
