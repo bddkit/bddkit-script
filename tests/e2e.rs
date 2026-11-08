@@ -1,7 +1,7 @@
-//! End-to-end: the real `bddkit` host (plugin ABI 3) and this crate's `cdylib`.
+//! End-to-end: the real `bddkit` host (plugin ABI 4) and this crate's `cdylib`.
 //!
 //! The host binary comes from `BDDKIT_BIN`; without it every test skips itself
-//! and passes, because no published host speaks ABI 3 yet.
+//! and passes, because no host built before ABI 4 loads the plugin.
 //! `examples/` is what runs first: the example and the proof are one thing.
 
 #![allow(
@@ -24,7 +24,7 @@ macro_rules! require_host {
         match std::env::var("BDDKIT_BIN") {
             Ok(p) if Path::new(&p).is_file() => PathBuf::from(p),
             _ => {
-                eprintln!("SKIP: set BDDKIT_BIN to a bddkit binary that speaks plugin ABI 3");
+                eprintln!("SKIP: set BDDKIT_BIN to a bddkit binary that speaks plugin ABI 4");
                 return;
             }
         }

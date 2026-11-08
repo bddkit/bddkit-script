@@ -75,7 +75,7 @@ pub fn manifest_json() -> String {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bddkit_abi_version() -> u32 {
-    3
+    4
 }
 
 #[unsafe(no_mangle)]

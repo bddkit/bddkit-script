@@ -10,6 +10,10 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # The host the plugin is tested against: the ABI 4 candidate, installed from
+  # its tag and never from a floating branch, so a red run means this plugin
+  # broke. Raise it when a newer candidate or release is out.
+  HOST_TAG: v0.5.0-rc.2
 
 jobs:
   test:
@@ -40,8 +44,8 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --locked
 
-  # Drives the plugin through a published host. 0.4.0 is the first release
-  # that speaks plugin ABI 3; without BDDKIT_BIN these tests skip themselves.
+  # Drives the plugin through the host built from HOST_TAG; without BDDKIT_BIN
+  # these tests skip themselves.
   e2e:
     name: e2e against bddkit
     runs-on: ubuntu-latest
@@ -53,10 +57,24 @@ jobs:
           toolchain: "1.97.1"
           rustflags: ""
 
+      - name: Cache the host
+        id: host
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/bddkit-host
+          key: bddkit-host-${{ env.HOST_TAG }}-${{ runner.os }}
       - name: Install bddkit
-        run: cargo install bddkit --version 0.4.0 --locked --root "$RUNNER_TEMP/bddkit"
+        if: steps.host.outputs.cache-hit != 'true'
+        shell: bash
+        run: >-
+          cargo install --git https://github.com/bddkit/bddkit --tag "$HOST_TAG"
+          --locked --root "$RUNNER_TEMP/bddkit-host" bddkit
+      - name: Use the host
+        shell: bash
+        run: |
+          echo "$RUNNER_TEMP/bddkit-host/bin" >> "$GITHUB_PATH"
+          exe=; [ "$RUNNER_OS" = Windows ] && exe=.exe
+          echo "BDDKIT_BIN=$RUNNER_TEMP/bddkit-host/bin/bddkit$exe" >> "$GITHUB_ENV"
 
       - name: End-to-end tests
-        env:
-          BDDKIT_BIN: ${{ runner.temp }}/bddkit/bin/bddkit
         run: cargo test --locked --test e2e
