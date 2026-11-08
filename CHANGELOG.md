@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/bddkit/bddkit-script/compare/v0.1.1...v0.2.0) - 2026-11-08
+
+### Added
+
+- [**breaking**] move to plugin ABI 4
+
+### Other
+
+- enforce the code health limits in Clippy and CI
+
 ## [0.1.1](https://github.com/bddkit/bddkit-script/compare/v0.1.0...v0.1.1) - 2026-10-30
 
 ### Added
