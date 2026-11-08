@@ -119,7 +119,7 @@ The check is strict on purpose, and refuses two kinds of script that would run: 
 
 ## Compatibility
 
-Needs a `bddkit` host that speaks plugin ABI 3.
+Needs a `bddkit` host that speaks plugin ABI 4.
 
 ## Building
 

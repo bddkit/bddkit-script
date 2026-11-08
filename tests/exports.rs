@@ -43,10 +43,12 @@ fn the_manifest_claims_script_shared_with_an_implicit_instance() {
 }
 
 #[test]
-fn the_abi_is_three_and_matches_the_plugin_json() {
+fn the_abi_is_four_and_matches_the_plugin_json() {
     let declared: Value = serde_json::from_str(include_str!("../bddkit-plugin.json")).unwrap();
-    assert_eq!(bddkit_abi_version(), 3);
+    assert_eq!(bddkit_abi_version(), 4);
     assert_eq!(declared["abi"], bddkit_abi_version());
+    let manifest: Value = serde_json::from_str(&manifest_json()).unwrap();
+    assert_eq!(declared["groups"], manifest["groups"]);
 }
 
 #[test]
