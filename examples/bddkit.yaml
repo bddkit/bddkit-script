@@ -1,3 +1,2 @@
 paths: [features]
-resources:
-  api: {}
+resources: {}

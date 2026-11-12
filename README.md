@@ -1,6 +1,6 @@
 # bddkit-script
 
-A `bddkit` plugin that runs short Rhai scripts to derive values (Base64, HMAC, JWT) inside feature files, in the same scenario as the API and DB steps `bddkit` already provides.
+A `bddkit` plugin that runs short Rhai scripts to derive values (Base64, HMAC, JWT) inside feature files, in the same scenario as the steps of the other plugins, such as the HTTP and database steps of the `api` and `db` plugins.
 
 ## Steps
 
@@ -119,7 +119,7 @@ The check is strict on purpose, and refuses two kinds of script that would run: 
 
 ## Compatibility
 
-Needs a `bddkit` host that speaks plugin ABI 4.
+Needs a `bddkit` host that speaks plugin ABI 4 (bddkit 0.5.0 or later). Tested against the version `ci.yml` pins (`HOST_TAG`).
 
 ## Building
 

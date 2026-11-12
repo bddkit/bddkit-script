@@ -75,7 +75,7 @@ impl Project {
         std::fs::write(dir.join("plugins.yaml"), lock).expect("lock");
         std::fs::write(
             dir.join("cfg.yaml"),
-            "paths: [features]\nmacro_paths: [macros]\nresources:\n  api: {}\n",
+            "paths: [features]\nmacro_paths: [macros]\nresources: {}\n",
         )
         .expect("config");
         Project(dir)
