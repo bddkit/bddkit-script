@@ -10,10 +10,10 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # The host the plugin is tested against: the ABI 4 candidate, installed from
+  # The host the plugin is tested against: a released bddkit, installed from
   # its tag and never from a floating branch, so a red run means this plugin
-  # broke. Raise it when a newer candidate or release is out.
-  HOST_TAG: v0.5.0-rc.2
+  # broke. Raise it when a newer release is out.
+  HOST_TAG: v0.5.0
 
 jobs:
   test:
